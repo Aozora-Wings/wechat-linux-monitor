@@ -55,159 +55,51 @@ jobs:
       run: |
         echo "timestamp=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
     
-    - name: Download packages and create version data
+    - name: Run version check with hash calculation
       if: steps.check.outputs.should_release == 'true'
       run: |
+        # Python脚本现在会处理所有哈希计算和版本更新
+        python scripts/check_version.py
+        
+        # 从 versions.json 生成 release notes
         VERSION="${{ steps.check.outputs.version }}"
-        TIMESTAMP="${{ steps.timestamp.outputs.timestamp }}"
-        echo "Version: $VERSION"
-        echo "Timestamp: $TIMESTAMP"
         
-        # 创建临时文件存储哈希值
-        > hashes.txt
-        
-        # 下载文件并计算哈希
-        download_and_hash() {
-          local url=$1
-          local filename=$2
-          echo "下载: $filename"
-          
-          wget -q -O "$filename" "$url"
-          
-          local sha256=$(sha256sum "$filename" | awk '{print $1}')
-          local size=$(stat -c%s "$filename")
-          
-          echo "$filename:$sha256:$size:$url" >> hashes.txt
-          echo "$filename - SHA256: $sha256"
-        }
-        
-        # 下载所有文件
-        download_and_hash \
-          "https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_x86_64.deb" \
-          "wechat_linux_x86_${VERSION}.deb"
-        
-        download_and_hash \
-          "https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_x86_64.rpm" \
-          "wechat_linux_x86_${VERSION}.rpm"
-        
-        download_and_hash \
-          "https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_x86_64.AppImage" \
-          "wechat_linux_x86_${VERSION}.AppImage"
-        
-        download_and_hash \
-          "https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_arm64.deb" \
-          "wechat_linux_arm64_${VERSION}.deb"
-        
-        download_and_hash \
-          "https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_arm64.rpm" \
-          "wechat_linux_arm64_${VERSION}.rpm"
-        
-        download_and_hash \
-          "https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_arm64.AppImage" \
-          "wechat_linux_arm64_${VERSION}.AppImage"
-        
-        download_and_hash \
-          "https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_LoongArch.deb" \
-          "wechat_linux_loongarch_${VERSION}.deb"
-        
-        # 从 hashes.txt 提取哈希值
-        x86_deb_hash=$(grep "wechat_linux_x86_${VERSION}.deb:" hashes.txt | cut -d: -f2)
-        x86_rpm_hash=$(grep "wechat_linux_x86_${VERSION}.rpm:" hashes.txt | cut -d: -f2)
-        x86_appimage_hash=$(grep "wechat_linux_x86_${VERSION}.AppImage:" hashes.txt | cut -d: -f2)
-        arm64_deb_hash=$(grep "wechat_linux_arm64_${VERSION}.deb:" hashes.txt | cut -d: -f2)
-        arm64_rpm_hash=$(grep "wechat_linux_arm64_${VERSION}.rpm:" hashes.txt | cut -d: -f2)
-        arm64_appimage_hash=$(grep "wechat_linux_arm64_${VERSION}.AppImage:" hashes.txt | cut -d: -f2)
-        loongarch_deb_hash=$(grep "wechat_linux_loongarch_${VERSION}.deb:" hashes.txt | cut -d: -f2)
-        
-        # 创建 versions_new.json - 使用 jq 来生成 JSON，这样更可靠
-        jq -n \
-          --arg version "$VERSION" \
-          --arg timestamp "$TIMESTAMP" \
-          --arg x86_deb_hash "$x86_deb_hash" \
-          --arg x86_rpm_hash "$x86_rpm_hash" \
-          --arg x86_appimage_hash "$x86_appimage_hash" \
-          --arg arm64_deb_hash "$arm64_deb_hash" \
-          --arg arm64_rpm_hash "$arm64_rpm_hash" \
-          --arg arm64_appimage_hash "$arm64_appimage_hash" \
-          --arg loongarch_deb_hash "$loongarch_deb_hash" \
-          --arg repo "${{ github.repository }}" \
-        '{
-          "version": $version,
-          "timestamp": $timestamp,
-          "files": {
-            "x86": {
-              "deb": {
-                "filename": "wechat_linux_x86_\($version).deb",
-                "sha256": $x86_deb_hash,
-                "url": "https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_x86_64.deb",
-                "download_url": "https://github.com/\($repo)/releases/download/v\($version)/wechat_linux_x86_\($version).deb"
-              },
-              "rpm": {
-                "filename": "wechat_linux_x86_\($version).rpm",
-                "sha256": $x86_rpm_hash,
-                "url": "https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_x86_64.rpm",
-                "download_url": "https://github.com/\($repo)/releases/download/v\($version)/wechat_linux_x86_\($version).rpm"
-              },
-              "appimage": {
-                "filename": "wechat_linux_x86_\($version).AppImage",
-                "sha256": $x86_appimage_hash,
-                "url": "https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_x86_64.AppImage",
-                "download_url": "https://github.com/\($repo)/releases/download/v\($version)/wechat_linux_x86_\($version).AppImage"
-              }
-            },
-            "arm64": {
-              "deb": {
-                "filename": "wechat_linux_arm64_\($version).deb",
-                "sha256": $arm64_deb_hash,
-                "url": "https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_arm64.deb",
-                "download_url": "https://github.com/\($repo)/releases/download/v\($version)/wechat_linux_arm64_\($version).deb"
-              },
-              "rpm": {
-                "filename": "wechat_linux_arm64_\($version).rpm",
-                "sha256": $arm64_rpm_hash,
-                "url": "https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_arm64.rpm",
-                "download_url": "https://github.com/\($repo)/releases/download/v\($version)/wechat_linux_arm64_\($version).rpm"
-              },
-              "appimage": {
-                "filename": "wechat_linux_arm64_\($version).AppImage",
-                "sha256": $arm64_appimage_hash,
-                "url": "https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_arm64.AppImage",
-                "download_url": "https://github.com/\($repo)/releases/download/v\($version)/wechat_linux_arm64_\($version).AppImage"
-              }
-            },
-            "loongarch": {
-              "deb": {
-                "filename": "wechat_linux_loongarch_\($version).deb",
-                "sha256": $loongarch_deb_hash,
-                "url": "https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_LoongArch.deb",
-                "download_url": "https://github.com/\($repo)/releases/download/v\($version)/wechat_linux_loongarch_\($version).deb"
-              }
-            }
-          }
-        }' > versions_new.json
-        
-        # 创建 release notes
         echo "# WeChat Linux $VERSION" > release_notes.md
         echo "" >> release_notes.md
         echo "## 文件列表" >> release_notes.md
         echo "" >> release_notes.md
         
-        while IFS=':' read -r filename sha256 size url; do
-          echo "### $filename" >> release_notes.md
-          echo "- **SHA256**: \`$sha256\`" >> release_notes.md
-          echo "- **大小**: $size 字节" >> release_notes.md
-          echo "- **原始 URL**: $url" >> release_notes.md
-          echo "" >> release_notes.md
-        done < hashes.txt
+        # 使用 jq 提取文件信息并生成 release notes
+        jq -r --arg version "$VERSION" '
+          .versions[] | select(.version == $version) | 
+          .files | to_entries[] | 
+          .key as $arch | 
+          .value | to_entries[] | 
+          .key as $pkg_type | 
+          .value | 
+          "### \(.filename)" + 
+          "\n- **SHA256**: `\(.sha256)`" + 
+          "\n- **大小**: \(.size) 字节" + 
+          "\n- **原始 URL**: \(.url)" + 
+          "\n"
+        ' data/versions.json >> release_notes.md
         
         echo "## Nix 格式哈希" >> release_notes.md
         echo "" >> release_notes.md
         echo "```nix" >> release_notes.md
-        while IFS=':' read -r filename sha256 size url; do
-          echo "# $filename" >> release_notes.md
-          echo "sha256 = \"$sha256\";" >> release_notes.md
-          echo "" >> release_notes.md
-        done < hashes.txt
+        
+        jq -r --arg version "$VERSION" '
+          .versions[] | select(.version == $version) | 
+          .files | to_entries[] | 
+          .key as $arch | 
+          .value | to_entries[] | 
+          .key as $pkg_type | 
+          .value | 
+          "# \(.filename)" + 
+          "\nsha256 = \"\(.sha256)\";" + 
+          "\n"
+        ' data/versions.json >> release_notes.md
+        
         echo "```" >> release_notes.md
     
     - name: Create Release
@@ -222,34 +114,13 @@ jobs:
           *.rpm
           *.AppImage
     
-    - name: Update version data files
+    - name: Update last release version
       if: steps.check.outputs.should_release == 'true'
       run: |
         VERSION="${{ steps.check.outputs.version }}"
-        TIMESTAMP="${{ steps.timestamp.outputs.timestamp }}"
         
         # 更新 last_release_version.txt
         echo "$VERSION" > data/last_release_version.txt
-        
-        # 读取现有的 versions.json
-        if [ -f "data/versions.json" ]; then
-          OLD_DATA=$(cat data/versions.json)
-          VERSION_DATA=$(cat versions_new.json)
-          
-          # 更新数据
-          if echo "$OLD_DATA" | jq -e '.versions' > /dev/null 2>&1; then
-            # 已有数组格式
-            echo "$OLD_DATA" | jq --argjson new "$VERSION_DATA" \
-              '.versions += [$new] | .latest_version = $new.version | .last_checked = "'"${TIMESTAMP}"'"' \
-              > data/versions.json
-          else
-            # 转换为数组格式
-            printf '{\n  "versions": [%s, %s],\n  "latest_version": "%s",\n  "last_checked": "%s"\n}' "$OLD_DATA" "$VERSION_DATA" "$VERSION" "$TIMESTAMP" > data/versions.json
-          fi
-        else
-          # 创建新文件
-          printf '{\n  "versions": [%s],\n  "latest_version": "%s",\n  "last_checked": "%s"\n}' "$(cat versions_new.json)" "$VERSION" "$TIMESTAMP" > data/versions.json
-        fi
         
         # 提交更改
         git config --local user.email "action@github.com"
