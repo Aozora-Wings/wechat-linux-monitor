@@ -2,171 +2,106 @@ name: Check WeChat Linux Version
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # 每天UTC 0点（北京时间8点）
-  workflow_dispatch:      # 允许手动触发
+    - cron: '0 0 * * *'
+  workflow_dispatch:
   push:
-    branches: [ main ]    # 推送到main分支时也运行
+    branches: [ main ]
 
 jobs:
   check-and-release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write     # 必须有写入权限才能创建release
+      contents: write
     
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
     
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
     
-    - name: Install Python dependencies
+    - name: Install dependencies
       run: |
         pip install requests beautifulsoup4 lxml
     
-    - name: Check current version
-      id: check_version
+    - name: Check version
+      id: check
       run: |
         python scripts/check_version.py
         
-        # 读取版本数据
+        # 读取最新版本
         if [ -f "data/versions.json" ]; then
-          LATEST_VERSION=$(jq -r '.latest_version' data/versions.json)
-          echo "Latest version in data: $LATEST_VERSION"
-        fi
-        
-        # 检查是否需要创建新release
-        VERSION_FILE="data/last_release_version.txt"
-        if [ ! -f "$VERSION_FILE" ]; then
-          echo "last_release_version.txt not found, assuming new version"
-          echo "should_release=true" >> $GITHUB_OUTPUT
-          echo "version=$LATEST_VERSION" >> $GITHUB_OUTPUT
-        else
-          LAST_RELEASED=$(cat "$VERSION_FILE")
-          echo "Last released version: $LAST_RELEASED"
-          echo "Latest version: $LATEST_VERSION"
+          VERSION=$(jq -r '.latest_version' data/versions.json)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
           
-          if [ "$LATEST_VERSION" != "$LAST_RELEASED" ]; then
-            echo "New version detected!"
+          # 检查是否已发布
+          if [ ! -f "data/last_release_version.txt" ]; then
             echo "should_release=true" >> $GITHUB_OUTPUT
-            echo "version=$LATEST_VERSION" >> $GITHUB_OUTPUT
+          elif [ "$VERSION" != "$(cat data/last_release_version.txt)" ]; then
+            echo "should_release=true" >> $GITHUB_OUTPUT
           else
-            echo "No new version"
             echo "should_release=false" >> $GITHUB_OUTPUT
           fi
+        else
+          echo "No version data found"
+          echo "should_release=false" >> $GITHUB_OUTPUT
         fi
     
-    - name: Download packages for new version
-      if: steps.check_version.outputs.should_release == 'true'
+    - name: Download packages
+      if: steps.check.outputs.should_release == 'true'
       run: |
-        VERSION="${{ steps.check_version.outputs.version }}"
-        echo "Downloading packages for version: $VERSION"
+        VERSION="${{ steps.check.outputs.version }}"
+        echo "Version: $VERSION"
         
-        # 创建下载目录
-        mkdir -p downloads
-        
-        # 下载所有包（使用标准文件名）
-        echo "下载 x86 架构包..."
-        wget -q -O "downloads/wechat_linux_x86_${VERSION}.deb" \
+        # 下载文件
+        wget -q -O "wechat_linux_x86_${VERSION}.deb" \
           "https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_x86_64.deb"
-        wget -q -O "downloads/wechat_linux_x86_${VERSION}.rpm" \
+        wget -q -O "wechat_linux_x86_${VERSION}.rpm" \
           "https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_x86_64.rpm"
-        wget -q -O "downloads/wechat_linux_x86_${VERSION}.AppImage" \
+        wget -q -O "wechat_linux_x86_${VERSION}.AppImage" \
           "https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_x86_64.AppImage"
         
-        echo "下载 ARM64 架构包..."
-        wget -q -O "downloads/wechat_linux_arm64_${VERSION}.deb" \
+        wget -q -O "wechat_linux_arm64_${VERSION}.deb" \
           "https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_arm64.deb"
-        wget -q -O "downloads/wechat_linux_arm64_${VERSION}.rpm" \
+        wget -q -O "wechat_linux_arm64_${VERSION}.rpm" \
           "https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_arm64.rpm"
-        wget -q -O "downloads/wechat_linux_arm64_${VERSION}.AppImage" \
+        wget -q -O "wechat_linux_arm64_${VERSION}.AppImage" \
           "https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_arm64.AppImage"
         
-        echo "下载 LoongArch 架构包..."
-        wget -q -O "downloads/wechat_linux_loongarch_${VERSION}.deb" \
+        wget -q -O "wechat_linux_loongarch_${VERSION}.deb" \
           "https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_LoongArch.deb"
         
-        # 检查下载的文件
-        echo "下载完成，文件列表："
-        ls -lh downloads/
-        
-        # 计算哈希值
-        echo "## 文件哈希值" > release_notes.md
+        # 创建简单的release说明
+        echo "# WeChat Linux $VERSION" > release_notes.md
         echo "" >> release_notes.md
-        for file in downloads/*; do
+        echo "## 文件列表" >> release_notes.md
+        echo "" >> release_notes.md
+        for file in *.deb *.rpm *.AppImage; do
           if [ -f "$file" ]; then
-            filename=$(basename "$file")
-            sha256=$(sha256sum "$file" | awk '{print $1}')
-            size=$(stat -c%s "$file")
-            echo "### $filename" >> release_notes.md
-            echo "- SHA256: \`$sha256\`" >> release_notes.md
-            echo "- 大小: $size 字节" >> release_notes.md
-            echo "" >> release_notes.md
+            echo "- $file" >> release_notes.md
           fi
         done
-        
-        # 创建完整的release说明 - 使用here-doc的正确格式
-        cat > full_release_notes.md << 'EOF'
-# WeChat Linux $VERSION
-        
-自动发布于 $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-        
-## 包含的安装包
-        
-### x86 架构
-- wechat_linux_x86_${VERSION}.deb
-- wechat_linux_x86_${VERSION}.rpm  
-- wechat_linux_x86_${VERSION}.AppImage
-        
-### ARM64 架构
-- wechat_linux_arm64_${VERSION}.deb
-- wechat_linux_arm64_${VERSION}.rpm
-- wechat_linux_arm64_${VERSION}.AppImage
-        
-### LoongArch 架构
-- wechat_linux_loongarch_${VERSION}.deb
-        
-EOF
-        
-        # 添加哈希值部分
-        cat release_notes.md >> full_release_notes.md
-        
-        # 添加原始链接部分
-        cat >> full_release_notes.md << 'EOF'
-        
-## 原始下载链接
-- x86 deb: https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_x86_64.deb
-- x86 rpm: https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_x86_64.rpm
-- x86 AppImage: https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_x86_64.AppImage
-- ARM64 deb: https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_arm64.deb
-- ARM64 rpm: https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_arm64.rpm
-- ARM64 AppImage: https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_arm64.AppImage
-- LoongArch deb: https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_LoongArch.deb
-EOF
     
-    - name: Create GitHub Release
-      if: steps.check_version.outputs.should_release == 'true'
+    - name: Create Release
+      if: steps.check.outputs.should_release == 'true'
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: "v${{ steps.check_version.outputs.version }}"
-        name: "WeChat Linux v${{ steps.check_version.outputs.version }}"
-        body_path: full_release_notes.md
-        draft: false
-        prerelease: false
-        files: downloads/*
+        tag_name: "v${{ steps.check.outputs.version }}"
+        name: "WeChat Linux v${{ steps.check.outputs.version }}"
+        body_path: release_notes.md
+        files: |
+          *.deb
+          *.rpm
+          *.AppImage
     
-    - name: Update release version record
-      if: steps.check_version.outputs.should_release == 'true'
+    - name: Update version record
+      if: steps.check.outputs.should_release == 'true'
       run: |
-        VERSION="${{ steps.check_version.outputs.version }}"
-        echo "$VERSION" > data/last_release_version.txt
-        
+        echo "${{ steps.check.outputs.version }}" > data/last_release_version.txt
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
         git add data/last_release_version.txt data/versions.json
-        git commit -m "Update to WeChat Linux v$VERSION" || echo "No changes to commit"
+        git commit -m "Add WeChat Linux v${{ steps.check.outputs.version }}" || echo "No changes"
         git push || echo "Nothing to push"
