@@ -1,0 +1,59 @@
+name: Check WeChat Linux Version
+
+on:
+  schedule:
+    # 每天UTC时间0点运行（北京时间8点）
+    - cron: '0 0 * * *'
+  # 也可以手动触发
+  workflow_dispatch:
+  # 推送时触发（用于测试）
+  push:
+    branches: [ main ]
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        pip install requests beautifulsoup4
+    
+    - name: Run version checker
+      id: check
+      run: python scripts/check_version.py
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Create Release if New Version
+      if: steps.check.outputs.new_version == 'true'
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v${{ steps.check.outputs.version }}
+        name: WeChat Linux v${{ steps.check.outputs.version }}
+        body: ${{ steps.check.outputs.release_notes }}
+        draft: false
+        prerelease: false
+        files: |
+          data/versions.json
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Commit and push changes
+      if: steps.check.outputs.new_version == 'true'
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add data/versions.json
+        git commit -m "Add WeChat Linux v${{ steps.check.outputs.version }} data"
+        git push
