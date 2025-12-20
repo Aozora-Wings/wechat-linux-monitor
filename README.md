@@ -16,9 +16,9 @@
 wechat_linux_架构_版本号_包类型.扩展名
 
 示例：
-- `wechat_linux_x86_4.1.0_deb.deb`
-- `wechat_linux_arm64_4.1.0_appimage.AppImage`
-- `wechat_linux_loongarch_4.1.0_deb.deb`
+- `wechat_linux_x86_4.1.0.deb`
+- `wechat_linux_arm64_4.1.0.AppImage`
+- `wechat_linux_loongarch_4.1.0.deb`
 
 ## 数据格式
 
@@ -35,5 +35,6 @@ wechat_linux_架构_版本号_包类型.扩展名
 4. 新版本会自动创建 Release
 
 ## 手动触发
+
 
 在 GitHub 仓库页面，点击 Actions → "Check WeChat Linux Version" → Run workflow
