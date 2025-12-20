@@ -109,8 +109,8 @@ jobs:
           fi
         done
         
-        # 创建完整的release说明
-        cat > full_release_notes.md << EOF
+        # 创建完整的release说明 - 使用here-doc的正确格式
+        cat > full_release_notes.md << 'EOF'
 # WeChat Linux $VERSION
         
 自动发布于 $(date -u +"%Y-%m-%d %H:%M:%S UTC")
@@ -130,7 +130,13 @@ jobs:
 ### LoongArch 架构
 - wechat_linux_loongarch_${VERSION}.deb
         
-$(cat release_notes.md)
+EOF
+        
+        # 添加哈希值部分
+        cat release_notes.md >> full_release_notes.md
+        
+        # 添加原始链接部分
+        cat >> full_release_notes.md << 'EOF'
         
 ## 原始下载链接
 - x86 deb: https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_x86_64.deb
