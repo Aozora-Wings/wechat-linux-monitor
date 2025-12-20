@@ -164,8 +164,44 @@ def main():
     
     print(f"检测到版本: {version}")
     
-    # 更新版本数据
+    # 检查是否已发布过这个版本
+    last_release_file = "data/last_release_version.txt"
+    if os.path.exists(last_release_file):
+        with open(last_release_file, 'r', encoding='utf-8') as f:
+            last_version = f.read().strip()
+        
+        if last_version == version:
+            print(f"版本 {version} 已发布，跳过处理")
+            return  # 直接返回，什么都不做
+    
+    # 检查版本是否已存在于 versions.json 中
+    data_file = "data/versions.json"
+    if os.path.exists(data_file):
+        with open(data_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        # 检查这个版本是否已经有完整的数据（所有哈希值都计算好了）
+        existing_version = None
+        for v in data.get('versions', []):
+            if v['version'] == version:
+                existing_version = v
+                break
+        
+        if existing_version:
+            # 检查所有哈希值是否都存在
+            all_hashes_exist = True
+            for arch_files in existing_version.get('files', {}).values():
+                for file_info in arch_files.values():
+                    if not file_info.get('sha256'):
+                        all_hashes_exist = False
+                        break
+            
+            if all_hashes_exist:
+                print(f"版本 {version} 已存在且哈希值完整，跳过下载")
+                return
+    
+    print(f"开始处理版本: {version}")
     update_version_data(version)
-
+    
 if __name__ == "__main__":
     main()
