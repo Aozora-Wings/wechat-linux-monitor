@@ -31,37 +31,41 @@ jobs:
       run: |
         python scripts/check_version.py
         
-        # 读取最新版本
-        if [ -f "data/versions.json" ]; then
-          VERSION=$(jq -r '.latest_version' data/versions.json)
+        # 读取输出
+        if [ -f "data/pending_version.txt" ]; then
+          VERSION=$(cat data/pending_version.txt)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          
-          # 检查是否已发布
-          if [ ! -f "data/last_release_version.txt" ]; then
-            echo "should_release=true" >> $GITHUB_OUTPUT
-          elif [ "$VERSION" != "$(cat data/last_release_version.txt)" ]; then
-            echo "should_release=true" >> $GITHUB_OUTPUT
-          else
-            echo "should_release=false" >> $GITHUB_OUTPUT
-          fi
+          echo "has_new_version=true" >> $GITHUB_OUTPUT
+          echo "发现新版本: $VERSION"
         else
-          echo "No version data found"
-          echo "should_release=false" >> $GITHUB_OUTPUT
+          echo "has_new_version=false" >> $GITHUB_OUTPUT
+          echo "没有新版本"
         fi
     
-    - name: Get current timestamp
-      if: steps.check.outputs.should_release == 'true'
-      id: timestamp
+    - name: Download and calculate hashes
+      if: steps.check.outputs.has_new_version == 'true'
+      id: download
       run: |
-        echo "timestamp=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
-    
-    - name: Run version check with hash calculation
-      if: steps.check.outputs.should_release == 'true'
-      run: |
-        # Python脚本现在会处理所有哈希计算和版本更新
-        python scripts/check_version.py
+        python scripts/download_and_hash.py
         
-        # 从 versions.json 生成 release notes
+        # 检查下载是否成功
+        if [ -f "data/versions.json" ]; then
+          VERSION="${{ steps.check.outputs.version }}"
+          # 验证版本是否已保存
+          if jq -e --arg v "$VERSION" '.versions[] | select(.version == $v)' data/versions.json > /dev/null; then
+            echo "download_success=true" >> $GITHUB_OUTPUT
+          else
+            echo "download_success=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+        else
+          echo "download_success=false" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+    
+    - name: Generate release notes
+      if: steps.download.outputs.download_success == 'true'
+      run: |
         VERSION="${{ steps.check.outputs.version }}"
         
         echo "# WeChat Linux $VERSION" > release_notes.md
@@ -103,7 +107,7 @@ jobs:
         echo "```" >> release_notes.md
     
     - name: Create Release
-      if: steps.check.outputs.should_release == 'true'
+      if: steps.download.outputs.download_success == 'true'
       uses: softprops/action-gh-release@v1
       with:
         tag_name: "v${{ steps.check.outputs.version }}"
@@ -115,7 +119,7 @@ jobs:
           *.appimage
     
     - name: Update last release version
-      if: steps.check.outputs.should_release == 'true'
+      if: steps.download.outputs.download_success == 'true'
       run: |
         VERSION="${{ steps.check.outputs.version }}"
         
@@ -128,3 +132,11 @@ jobs:
         git add data/last_release_version.txt data/versions.json
         git commit -m "Update to WeChat Linux v$VERSION" || echo "No changes"
         git push || echo "Nothing to push"
+    
+    - name: Cleanup
+      if: always()
+      run: |
+        # 清理临时文件
+        rm -f data/pending_version.txt
+        # 可选：清理下载的文件，避免占用空间
+        rm -f *.deb *.rpm *.appimage
