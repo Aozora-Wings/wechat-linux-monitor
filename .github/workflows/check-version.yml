@@ -112,7 +112,7 @@ jobs:
         files: |
           *.deb
           *.rpm
-          *.AppImage
+          *.appimage
     
     - name: Update last release version
       if: steps.check.outputs.should_release == 'true'
